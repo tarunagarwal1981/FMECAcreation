@@ -37,7 +37,7 @@ def process_fmeca_data(df):
     for i in range(retries):
         try:
             # Send the data to GPT-4 for FMECA processing
-            response = openai.Completion.create(
+            response = openai.ChatCompletion.create(
                 engine="gpt-3.5-turbo",
                 prompt=fmeca_training_prompt + fmeca_text,
                 max_tokens=3000,
