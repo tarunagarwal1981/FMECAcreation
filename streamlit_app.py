@@ -3,6 +3,7 @@ import pandas as pd
 import openai
 import os
 import time
+from io import StringIO  # Move this import to the top of the file
 from openai.error import RateLimitError
 
 # Function to get the OpenAI API key
@@ -46,5 +47,72 @@ def process_fmeca_data(df):
             # Extract the GPT-4 response
             output_text = response.choices[0].text.strip()
 
-            # Assuming GPT-4 outputs a CSV-like structure, we convert it back into a DataFrame
-            from io import StringIO
+            # Convert the GPT-4 output into a DataFrame
+            processed_df = pd.read_csv(StringIO(output_text))
+            return processed_df
+        
+        except RateLimitError:
+            if i < retries - 1:
+                wait_time = initial_wait * (2 ** i)  # Exponential backoff: 5, 10, 20, 40 seconds
+                st.warning(f"Rate limit reached. Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                st.error("Rate limit reached. Please try again later.")
+                return None
+
+# Throttle user requests to avoid rate limiting
+def throttle_requests(threshold=60):
+    if 'last_request_time' not in st.session_state:
+        st.session_state.last_request_time = 0
+    current_time = time.time()
+    
+    if current_time - st.session_state.last_request_time < threshold:
+        st.warning(f"Please wait {threshold - (current_time - st.session_state.last_request_time):.0f} seconds before making another request.")
+        return False
+    
+    st.session_state.last_request_time = current_time
+    return True
+
+# Caching the processed data to avoid redundant API calls
+@st.cache_data(show_spinner=False)
+def process_fmeca_data_cached(df):
+    return process_fmeca_data(df)
+
+# Set up OpenAI API key
+openai.api_key = get_api_key()
+
+# Streamlit UI layout
+st.title('FMECA Data Processor with GPT-4')
+
+# File uploader: Accepts Excel file from user
+uploaded_file = st.file_uploader("Upload your FMECA Excel file", type=['xlsx'])
+
+if uploaded_file is not None:
+    # Read the Excel file
+    try:
+        df = pd.read_excel(uploaded_file)
+        
+        # Display the uploaded data
+        st.write("Uploaded FMECA Data:")
+        st.dataframe(df)
+
+        # Check if we should throttle requests
+        if throttle_requests(threshold=60):
+            # Process the data using GPT-4
+            with st.spinner('Processing the data with GPT-4...'):
+                processed_data = process_fmeca_data_cached(df)
+
+            # If processing was successful, display the processed data
+            if processed_data is not None:
+                st.write("Processed FMECA Data:")
+                st.dataframe(processed_data)
+
+                # Option to download the processed file
+                st.download_button(
+                    label="Download Processed FMECA Data",
+                    data=processed_data.to_csv(index=False).encode('utf-8'),
+                    file_name="processed_fmeca.csv",
+                    mime="text/csv"
+                )
+    except Exception as e:
+        st.error(f"Error processing file: {e}")
