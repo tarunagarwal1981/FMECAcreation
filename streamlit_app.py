@@ -2,8 +2,17 @@ import streamlit as st
 import pandas as pd
 import openai
 
-# Load your OpenAI API key
-openai.api_key = "your_openai_api_key"
+# Function to get the OpenAI API key
+def get_api_key():
+    if 'openai' in st.secrets:
+        return st.secrets['openai']['api_key']
+    api_key = os.getenv('OPENAI_API_KEY')
+    if api_key is None:
+        raise ValueError("API key not found. Set OPENAI_API_KEY as an environment variable.")
+    return api_key
+
+# Initialize OpenAI API
+openai.api_key = get_api_key()
 
 # Refined FMEA prompt for training GPT-4
 fmeca_training_prompt = """
