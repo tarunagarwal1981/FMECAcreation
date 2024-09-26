@@ -38,7 +38,7 @@ def process_fmeca_data(df):
         try:
             # Send the data to GPT-4 for FMECA processing
             response = openai.Completion.create(
-                engine="gpt-3.5",
+                engine="gpt-3.5-turbo",
                 prompt=fmeca_training_prompt + fmeca_text,
                 max_tokens=3000,
                 temperature=0
