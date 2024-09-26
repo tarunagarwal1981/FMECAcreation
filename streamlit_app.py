@@ -1,151 +1,82 @@
 import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+import openai
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+# Load your OpenAI API key
+openai.api_key = "your_openai_api_key"
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+# Refined FMEA prompt for training GPT-4
+fmeca_training_prompt = """
+You are an experienced reliability engineer specialized in FMEA (Failure Mode and Effects Analysis). 
+I need you to process the following table of data and categorize it based on the following definitions:
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+- **Failure Mode**: A specific combination of a component and a verb that describes how the component fails to perform its intended function. (Example: "Piston ring fractures")
+- **Failure Symptom**: An observable indicator that a failure mode is occurring or has occurred. (Example: "Increased vibration")
+- **Failure Effect**: The resulting impact or consequence of a failure mode on the system's performance. (Example: "Reduced engine power")
+- **Failure Cause**: The underlying reason or mechanism that leads to the occurrence of a failure mode. (Example: "Wear and tear")
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+Training Guidelines:
+1. Identify failure modes as specific component-verb combinations.
+2. Recognize failure symptoms as observable indicators.
+3. Determine failure effects as impacts on system performance.
+4. Detect failure causes as underlying reasons or mechanisms.
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+Please format the data into columns for:
+1. Failure Mode
+2. Failure Symptom
+3. Failure Cause
+4. Failure Effect
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+Here is the data:
+"""
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
+def process_fmeca_data(df):
+    # Convert the dataframe to string for processing
+    fmeca_text = df.to_string(index=False)
+    
+    # Send the data to GPT-4 for FMECA processing
+    response = openai.Completion.create(
+        engine="gpt-4",  # Make sure to use GPT-4
+        prompt=fmeca_training_prompt + fmeca_text,
+        max_tokens=3000,
+        temperature=0
     )
+    
+    # Extract the GPT-4 response
+    output_text = response.choices[0].text.strip()
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+    # Assuming GPT-4 outputs a CSV-like structure, we convert it back into a DataFrame
+    from io import StringIO
+    processed_df = pd.read_csv(StringIO(output_text))
+    
+    return processed_df
 
-    return gdp_df
+# Streamlit UI layout
+st.title('FMECA Data Processor with GPT-4')
 
-gdp_df = get_gdp_data()
+# File uploader: Accepts Excel file from user
+uploaded_file = st.file_uploader("Upload your FMECA Excel file", type=['xlsx'])
 
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+if uploaded_file is not None:
+    # Read the Excel file
+    df = pd.read_excel(uploaded_file)
+    
+    # Display the uploaded data
+    st.write("Uploaded FMECA Data:")
+    st.dataframe(df)
+    
+    # Process the data using GPT-4
+    with st.spinner('Processing the data with GPT-4...'):
+        processed_data = process_fmeca_data(df)
+    
+    # Display the processed data
+    st.write("Processed FMECA Data:")
+    st.dataframe(processed_data)
+    
+    # Option to download the processed file
+    st.download_button(
+        label="Download Processed FMECA Data",
+        data=processed_data.to_csv(index=False).encode('utf-8'),
+        file_name="processed_fmeca.csv",
+        mime="text/csv"
+    )
