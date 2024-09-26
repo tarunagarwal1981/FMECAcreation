@@ -15,7 +15,7 @@ def get_api_key():
         raise ValueError("API key not found. Set OPENAI_API_KEY as an environment variable.")
     return api_key
 
-# Function to process FMECA data using GPT-4
+# Function to process FMECA data using GPT-3.5-turbo
 def process_fmeca_data(df):
     fmeca_text = df.to_string(index=False)
     
@@ -36,18 +36,21 @@ def process_fmeca_data(df):
     initial_wait = 5  # Start with 5 seconds wait time for exponential backoff
     for i in range(retries):
         try:
-            # Send the data to GPT-4 for FMECA processing
+            # Send the data to GPT-3.5-turbo for FMECA processing
             response = openai.ChatCompletion.create(
-                engine="gpt-3.5-turbo",
-                prompt=fmeca_training_prompt + fmeca_text,
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are an experienced reliability engineer specialized in FMEA."},
+                    {"role": "user", "content": fmeca_training_prompt + fmeca_text}
+                ],
                 max_tokens=3000,
                 temperature=0
             )
-    
-            # Extract the GPT-4 response
-            output_text = response.choices[0].text.strip()
 
-            # Convert the GPT-4 output into a DataFrame
+            # Extract the GPT-3.5 response
+            output_text = response['choices'][0]['message']['content'].strip()
+
+            # Convert the GPT-3.5 output into a DataFrame
             processed_df = pd.read_csv(StringIO(output_text))
             return processed_df
         
@@ -82,7 +85,7 @@ def process_fmeca_data_cached(df):
 openai.api_key = get_api_key()
 
 # Streamlit UI layout
-st.title('FMECA Data Processor with GPT-4')
+st.title('FMECA Data Processor with GPT-3.5-turbo')
 
 # File uploader: Accepts Excel file from user
 uploaded_file = st.file_uploader("Upload your FMECA Excel file", type=['xlsx'])
@@ -98,8 +101,8 @@ if uploaded_file is not None:
 
         # Check if we should throttle requests
         if throttle_requests(threshold=60):
-            # Process the data using GPT-4
-            with st.spinner('Processing the data with GPT-4...'):
+            # Process the data using GPT-3.5-turbo
+            with st.spinner('Processing the data with GPT-3.5-turbo...'):
                 processed_data = process_fmeca_data_cached(df)
 
             # If processing was successful, display the processed data
