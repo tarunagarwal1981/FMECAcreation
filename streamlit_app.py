@@ -50,7 +50,7 @@ def process_fmeca_data(df):
             response = openai.Completion.create(
                 engine="gpt-4",
                 prompt=fmeca_training_prompt + fmeca_text,
-                max_tokens=3000,
+                max_tokens=2000,
                 temperature=0
             )
     
